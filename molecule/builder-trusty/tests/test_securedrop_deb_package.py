@@ -1,6 +1,7 @@
 import pytest
 import os
 import re
+import tempfile
 
 
 SECUREDROP_TARGET_PLATFORM = os.environ.get("SECUREDROP_TARGET_PLATFORM", "trusty")
@@ -226,6 +227,30 @@ def test_deb_package_contains_no_generated_assets(host, deb):
 
         # no .map files should exist; only the generated CSS files.
         assert not re.search("^.*css.map$", c.stdout, re.M)
+
+
+@pytest.mark.parametrize("deb", deb_packages)
+def test_deb_package_contains_correct_conffiles(host, deb):
+    """
+    Ensures the `securedrop-app-code` package does not contain certain
+    values in `conffiles`, like AppArmor profiles. This would break unattended
+    updates to AppArmor profiles.
+    """
+    deb_package = host.file(deb.format(
+        securedrop_test_vars.securedrop_version))
+
+    # Only relevant for the securedrop-app-code package:
+    if "securedrop-app-code" in deb_package.path:
+        tmpdir = tempfile.mkdtemp()
+        # The `--raw-extract` flag includes `DEBIAN/` dir with control files
+        host.run("dpkg-deb --raw-extract {} {}".format(deb, tmpdir))
+        conffiles_path = os.path.join(tmpdir, "DEBIAN", "conffiles")
+        f = host.file(conffiles_path)
+
+        # Ensure there are no AppArmor profiles in conffiles
+        assert "/etc/apparmor.d" not in f.content_string
+        # Ensure the logo is specified as conffile
+        assert "/var/www/securedrop/static/i/logo.png" in f.content_string
 
 
 @pytest.mark.parametrize("deb", deb_packages)
